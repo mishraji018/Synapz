@@ -1,4 +1,3 @@
-/// <reference types="npm:@types/deno" />
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 
 // CORS headers for browser requests
@@ -13,7 +12,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { video_id } = await req.json()
+    const { video_id } = await req.json() as any
     console.log("Received video_id:", video_id)
 
     if (!video_id) {
@@ -35,7 +34,7 @@ Deno.serve(async (req: Request) => {
     try {
       const oembedResponse = await fetch(`https://www.youtube.com/oembed?url=${videoUrl}&format=json`)
       if (oembedResponse.ok) {
-        const oembedData = await oembedResponse.json()
+        const oembedData: any = await oembedResponse.json()
         title = oembedData.title || title
       }
     } catch (e) {
@@ -60,7 +59,7 @@ Deno.serve(async (req: Request) => {
       throw new Error(`RapidAPI call failed. Status: ${rapidApiResponse.status}. Response: ${errorText}`);
     }
 
-    const rapidApiData = await rapidApiResponse.json();
+    const rapidApiData: any = await rapidApiResponse.json();
     
     // Log the exact JSON structure for debugging
     console.log("RapidAPI Raw Response Type:", typeof rapidApiData);

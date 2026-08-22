@@ -1,11 +1,12 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
-import { FileText, LayoutGrid, List, File, PlaySquare, Link as LinkIcon, Calendar, Folder, Edit2, Check, Plus, MoreVertical, Trash2, FolderOutput, X } from 'lucide-react'
-import { useState } from 'react'
+import { FileText, LayoutGrid, List, File, PlaySquare, Link as LinkIcon, Calendar, Folder, Edit2, Check, Plus, MoreVertical, Trash2, FolderOutput, X, SlidersHorizontal, ArrowUpDown, Award } from 'lucide-react'
+import { useState, useMemo } from 'react'
 import { clsx } from 'clsx'
 import { useQueryClient, useMutation } from '@tanstack/react-query'
 import { Note } from '@/lib/types'
+import { ConfirmModal } from '@/components/ui/ConfirmModal'
 
 const tagColors = [
   'bg-blue-500/10 text-blue-600 dark:bg-blue-500/20 dark:text-blue-300',
@@ -23,6 +24,7 @@ function getTagColor(tag: string) {
 
 type DashboardSearch = {
   subject?: string
+  q?: string
 }
 
 export const Route = createFileRoute('/_auth/dashboard')({
@@ -30,6 +32,7 @@ export const Route = createFileRoute('/_auth/dashboard')({
   validateSearch: (search: Record<string, unknown>): DashboardSearch => {
     return {
       subject: search.subject as string | undefined,
+      q: search.q as string | undefined,
     }
   },
 })
@@ -40,6 +43,8 @@ function getSourceIcon(type: string) {
     case 'pdf': return <File size={16} className="text-red-500" />
     case 'youtube': return <PlaySquare size={16} className="text-red-600" />
     case 'article': return <LinkIcon size={16} className="text-green-500" />
+    case 'docx': return <File size={16} className="text-blue-600" />
+    case 'txt': return <FileText size={16} className="text-gray-500" />
     default: return <FileText size={16} />
   }
 }
@@ -54,6 +59,11 @@ function SubjectBadge({ note, allSubjects }: { note: Note, allSubjects: string[]
     mutationFn: (subject: string) => api.updateNote(note.id, { subject }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notes'] })
   })
+
+  const stopEvent = (e: React.SyntheticEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+  }
 
   const handleSelect = (subject: string) => {
     if (subject !== note.subject) {
@@ -72,9 +82,15 @@ function SubjectBadge({ note, allSubjects }: { note: Note, allSubjects: string[]
   }
 
   return (
-    <div className="relative group/badge" onClick={e => { e.preventDefault(); e.stopPropagation(); }}>
+    <div 
+      className="relative group/badge" 
+      onClick={stopEvent}
+      onMouseDown={stopEvent}
+      onPointerDown={stopEvent}
+    >
       <button 
-        onClick={() => setIsOpen(!isOpen)}
+        type="button"
+        onClick={(e) => { stopEvent(e); setIsOpen(!isOpen); }}
         className="flex items-center gap-1.5 px-2.5 py-1 bg-secondary/80 hover:bg-secondary text-secondary-foreground rounded-full text-xs font-semibold transition-colors group/btn"
       >
         <Folder size={12} className="text-muted-foreground group-hover/btn:text-foreground" />
@@ -91,7 +107,8 @@ function SubjectBadge({ note, allSubjects }: { note: Note, allSubjects: string[]
             {allSubjects.map(sub => (
               <button
                 key={sub}
-                onClick={() => handleSelect(sub)}
+                type="button"
+                onClick={(e) => { stopEvent(e); handleSelect(sub); }}
                 className={clsx(
                   "w-full text-left px-3 py-2 text-sm hover:bg-secondary/50 transition-colors flex items-center justify-between",
                   sub === note.subject && "text-primary font-medium"
@@ -117,11 +134,12 @@ function SubjectBadge({ note, allSubjects }: { note: Note, allSubjects: string[]
                     if (e.key === 'Escape') { setIsTypingNew(false); setNewValue(''); }
                   }}
                 />
-                <button onClick={handleSaveNew} className="text-green-500 hover:bg-green-500/10 p-1 rounded shrink-0"><Check size={14}/></button>
+                <button type="button" onClick={handleSaveNew} className="text-green-500 hover:bg-green-500/10 p-1 rounded shrink-0"><Check size={14}/></button>
               </div>
             ) : (
               <button 
-                onClick={() => setIsTypingNew(true)}
+                type="button"
+                onClick={(e) => { stopEvent(e); setIsTypingNew(true); }}
                 className="w-full flex items-center gap-2 text-sm text-primary hover:bg-primary/10 px-2 py-1.5 rounded transition-colors"
               >
                 <Plus size={14} />
@@ -133,7 +151,7 @@ function SubjectBadge({ note, allSubjects }: { note: Note, allSubjects: string[]
       )}
       
       {isOpen && (
-        <div className="fixed inset-0 z-40" onClick={() => { setIsOpen(false); setIsTypingNew(false); }} />
+        <div className="fixed inset-0 z-40" onClick={(e) => { stopEvent(e); setIsOpen(false); setIsTypingNew(false); }} />
       )}
     </div>
   )
@@ -144,6 +162,7 @@ function NoteActionsMenu({ note, allSubjects }: { note: Note, allSubjects: strin
   const [activeSubMenu, setActiveSubMenu] = useState<'none' | 'move'>('none')
   const [isTypingNew, setIsTypingNew] = useState(false)
   const [newValue, setNewValue] = useState('')
+  const [showConfirmDelete, setShowConfirmDelete] = useState(false)
   const queryClient = useQueryClient()
   
   const updateMutation = useMutation({
@@ -153,8 +172,31 @@ function NoteActionsMenu({ note, allSubjects }: { note: Note, allSubjects: strin
 
   const deleteMutation = useMutation({
     mutationFn: () => api.deleteNote(note.id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notes'] })
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: ['notes'] })
+      const previousNotes = queryClient.getQueryData<Note[]>(['notes'])
+      if (previousNotes) {
+        queryClient.setQueryData<Note[]>(['notes'], previousNotes.filter(n => n.id !== note.id))
+      }
+      return { previousNotes }
+    },
+    onError: (err, _variables, context) => {
+      console.error("Failed to delete note:", err)
+      if (context?.previousNotes) {
+        queryClient.setQueryData(['notes'], context.previousNotes)
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['notes'] })
+      setShowConfirmDelete(false)
+      setIsOpen(false)
+    }
   })
+
+  const stopEvent = (e: React.SyntheticEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+  }
 
   const handleSelectSubject = (subject: string) => {
     if (subject !== note.subject) updateMutation.mutate(subject)
@@ -172,17 +214,16 @@ function NoteActionsMenu({ note, allSubjects }: { note: Note, allSubjects: strin
     setNewValue('')
   }
 
-  const handleDelete = () => {
-    if (confirm(`Delete '${note.title}'? This action cannot be undone.`)) {
-      deleteMutation.mutate()
-    }
-    setIsOpen(false)
-  }
-
   return (
-    <div className="relative" onClick={e => { e.preventDefault(); e.stopPropagation(); }}>
+    <div 
+      className="relative" 
+      onClick={stopEvent}
+      onMouseDown={stopEvent}
+      onPointerDown={stopEvent}
+    >
       <button 
-        onClick={() => setIsOpen(!isOpen)}
+        type="button"
+        onClick={(e) => { stopEvent(e); setIsOpen(!isOpen); }}
         className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary rounded-md transition-colors opacity-100 sm:opacity-0 group-hover:opacity-100"
       >
         <MoreVertical size={16} />
@@ -193,7 +234,8 @@ function NoteActionsMenu({ note, allSubjects }: { note: Note, allSubjects: strin
           {activeSubMenu === 'none' && (
             <>
               <button 
-                onClick={() => setActiveSubMenu('move')}
+                type="button"
+                onClick={(e) => { stopEvent(e); setActiveSubMenu('move'); }}
                 className="w-full text-left px-3 py-2 text-sm hover:bg-secondary/50 transition-colors flex items-center gap-2"
               >
                 <FolderOutput size={14} className="text-muted-foreground shrink-0" />
@@ -203,7 +245,8 @@ function NoteActionsMenu({ note, allSubjects }: { note: Note, allSubjects: strin
               <div className="h-px bg-border my-1" />
               
               <button 
-                onClick={handleDelete}
+                type="button"
+                onClick={(e) => { stopEvent(e); setShowConfirmDelete(true); }}
                 className="w-full text-left px-3 py-2 text-sm hover:bg-destructive/10 text-destructive transition-colors flex items-center gap-2"
               >
                 <Trash2 size={14} className="shrink-0" />
@@ -216,13 +259,14 @@ function NoteActionsMenu({ note, allSubjects }: { note: Note, allSubjects: strin
             <div className="py-1">
               <div className="px-3 py-1.5 flex items-center justify-between text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                 <span>Move to</span>
-                <button onClick={() => setActiveSubMenu('none')} className="hover:text-foreground"><X size={12} /></button>
+                <button type="button" onClick={(e) => { stopEvent(e); setActiveSubMenu('none'); }} className="hover:text-foreground"><X size={12} /></button>
               </div>
               <div className="max-h-48 overflow-y-auto">
                 {allSubjects.map(sub => (
                   <button
                     key={sub}
-                    onClick={() => handleSelectSubject(sub)}
+                    type="button"
+                    onClick={(e) => { stopEvent(e); handleSelectSubject(sub); }}
                     className={clsx(
                       "w-full text-left px-3 py-2 text-sm hover:bg-secondary/50 transition-colors flex items-center justify-between",
                       sub === note.subject && "text-primary font-medium"
@@ -248,12 +292,13 @@ function NoteActionsMenu({ note, allSubjects }: { note: Note, allSubjects: strin
                         if (e.key === 'Escape') { setIsTypingNew(false); setNewValue(''); }
                       }}
                     />
-                    <button onClick={handleSaveNewSubject} className="text-green-500 hover:bg-green-500/10 p-1 rounded shrink-0"><Check size={14}/></button>
+                    <button type="button" onClick={handleSaveNewSubject} className="text-green-500 hover:bg-green-500/10 p-1 rounded shrink-0"><Check size={14}/></button>
                   </div>
                 ) : (
                   <button 
-                    onClick={() => setIsTypingNew(true)}
-                    className="w-full flex items-center gap-2 text-sm text-primary hover:bg-primary/10 px-2 py-1.5 rounded transition-colors"
+                    type="button"
+                    onClick={(e) => { stopEvent(e); setIsTypingNew(true); }}
+                    className="w-full flex items-center gap-2 text-sm text-primary hover:bg-primary/10 px-2 py-1.5 rounded-colors"
                   >
                     <Plus size={14} />
                     <span>Create new</span>
@@ -266,8 +311,20 @@ function NoteActionsMenu({ note, allSubjects }: { note: Note, allSubjects: strin
       )}
       
       {isOpen && (
-        <div className="fixed inset-0 z-40" onClick={() => { setIsOpen(false); setActiveSubMenu('none'); setIsTypingNew(false); }} />
+        <div className="fixed inset-0 z-40" onClick={(e) => { stopEvent(e); setIsOpen(false); setActiveSubMenu('none'); setIsTypingNew(false); }} />
       )}
+
+      <ConfirmModal
+        isOpen={showConfirmDelete}
+        title="Delete Note"
+        message={`Are you sure you want to delete '${note.title}'? This action cannot be undone.`}
+        confirmText="Delete Note"
+        cancelText="Cancel"
+        variant="danger"
+        isLoading={deleteMutation.isPending}
+        onConfirm={() => deleteMutation.mutate()}
+        onClose={() => setShowConfirmDelete(false)}
+      />
     </div>
   )
 }
@@ -275,17 +332,60 @@ function NoteActionsMenu({ note, allSubjects }: { note: Note, allSubjects: strin
 function Dashboard() {
   const { subject } = Route.useSearch()
   const [view, setView] = useState<'grid' | 'list'>('grid')
+  const [filterSource, setFilterSource] = useState<string>('all')
+  const [searchQuery, setSearchQuery] = useState<string>('')
+  const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'title'>('newest')
+
   const { data: allNotes, isLoading } = useQuery({
     queryKey: ['notes'],
     queryFn: api.getNotes,
   })
 
-  const notes = subject && allNotes ? allNotes.filter(n => n.subject === subject) : allNotes
-  const subjectsList = Array.from(new Set(allNotes?.map(n => n.subject).filter(Boolean))) || []
+  // Subjects list
+  const subjectsList = useMemo(() => {
+    return Array.from(new Set(allNotes?.map(n => n.subject).filter(Boolean))) || []
+  }, [allNotes])
+
+  // Filter & sort logic
+  const filteredNotes = useMemo(() => {
+    if (!allNotes) return []
+    let result = [...allNotes]
+
+    // Subject filter from route params
+    if (subject) {
+      result = result.filter(n => n.subject === subject)
+    }
+
+    // Source type filter
+    if (filterSource !== 'all') {
+      result = result.filter(n => n.source_type === filterSource)
+    }
+
+    // Search query filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim()
+      result = result.filter(n => 
+        n.title.toLowerCase().includes(q) ||
+        n.subject.toLowerCase().includes(q) ||
+        n.tags?.some(t => t.toLowerCase().includes(q)) ||
+        n.tldr?.toLowerCase().includes(q)
+      )
+    }
+
+    // Sorting
+    result.sort((a, b) => {
+      if (sortBy === 'newest') return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      if (sortBy === 'oldest') return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      if (sortBy === 'title') return a.title.localeCompare(b.title)
+      return 0
+    })
+
+    return result
+  }, [allNotes, subject, filterSource, searchQuery, sortBy])
 
   if (isLoading) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-4 max-w-6xl mx-auto">
         <div className="h-8 w-48 bg-secondary rounded animate-pulse"></div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {[1, 2, 3].map(i => (
@@ -296,7 +396,7 @@ function Dashboard() {
     )
   }
 
-  if (!notes || notes.length === 0) {
+  if (!allNotes || allNotes.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center max-w-md mx-auto pt-20">
         <div className="w-24 h-24 bg-secondary rounded-full flex items-center justify-center mb-6">
@@ -308,9 +408,10 @@ function Dashboard() {
         </p>
         <Link 
           to="/new" 
-          className="bg-primary text-primary-foreground px-6 py-2 rounded-full font-medium hover:opacity-90 transition-opacity"
+          className="bg-primary text-primary-foreground px-6 py-2 rounded-full font-medium hover:opacity-90 transition-opacity flex items-center gap-2"
         >
-          Create Note
+          <Plus size={18} />
+          <span>Create Note</span>
         </Link>
       </div>
     )
@@ -318,84 +419,179 @@ function Dashboard() {
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">
-          {subject ? `${subject} Notes` : 'My Notes'}
-        </h1>
-        <div className="flex items-center gap-1 bg-secondary rounded-lg p-1">
-          <button 
-            onClick={() => setView('grid')}
-            className={clsx("p-1.5 rounded-md transition-colors", view === 'grid' ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground")}
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold">
+            {subject ? `${subject} Notes` : 'My Knowledge Base'}
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            {filteredNotes.length} {filteredNotes.length === 1 ? 'note' : 'notes'} found
+          </p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          {/* View Mode Toggle */}
+          <div className="flex items-center gap-1 bg-secondary rounded-lg p-1">
+            <button 
+              onClick={() => setView('grid')}
+              className={clsx("p-1.5 rounded-md transition-colors", view === 'grid' ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground")}
+              title="Grid View"
+            >
+              <LayoutGrid size={18} />
+            </button>
+            <button 
+              onClick={() => setView('list')}
+              className={clsx("p-1.5 rounded-md transition-colors", view === 'list' ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground")}
+              title="List View"
+            >
+              <List size={18} />
+            </button>
+          </div>
+
+          <Link
+            to="/new"
+            className="bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium text-sm hover:opacity-90 transition-opacity flex items-center gap-2"
           >
-            <LayoutGrid size={18} />
-          </button>
-          <button 
-            onClick={() => setView('list')}
-            className={clsx("p-1.5 rounded-md transition-colors", view === 'list' ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground")}
-          >
-            <List size={18} />
-          </button>
+            <Plus size={16} />
+            <span>New Note</span>
+          </Link>
         </div>
       </div>
 
-      <div className={clsx(
-        "gap-4", 
-        view === 'grid' ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3" : "flex flex-col"
-      )}>
-        {notes.map(note => (
-          <Link 
-            key={note.id} 
-            to="/note/$noteId"
-            params={{ noteId: note.id }}
-            className={clsx(
-              "group bg-card border border-border rounded-xl hover:border-primary/30 hover:scale-[1.02] hover:shadow-lg shadow-sm transition-all duration-200 p-6 relative flex",
-              view === 'grid' ? "flex-col h-48" : "flex-row items-center justify-between h-auto"
-            )}
-          >
-            <div className="absolute top-4 right-4 z-10">
-              <NoteActionsMenu note={note} allSubjects={subjectsList} />
-            </div>
+      {/* Filter Toolbar */}
+      <div className="bg-card border border-border rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+        {/* Source Type Filter Chips */}
+        <div className="flex items-center gap-2 overflow-x-auto">
+          <SlidersHorizontal size={14} className="text-muted-foreground shrink-0" />
+          {[
+            { id: 'all', label: 'All Sources' },
+            { id: 'text', label: 'Text' },
+            { id: 'pdf', label: 'PDF' },
+            { id: 'youtube', label: 'YouTube' },
+            { id: 'article', label: 'Article' },
+            { id: 'docx', label: 'DOCX' },
+            { id: 'txt', label: 'TXT' },
+          ].map(type => (
+            <button
+              key={type.id}
+              onClick={() => setFilterSource(type.id)}
+              className={clsx(
+                "px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors",
+                filterSource === type.id
+                  ? "bg-primary text-primary-foreground font-semibold"
+                  : "bg-secondary/50 text-muted-foreground hover:bg-secondary hover:text-foreground"
+              )}
+            >
+              {type.label}
+            </button>
+          ))}
+        </div>
 
-            <div className={clsx(view === 'list' && "flex items-center gap-4 flex-1 pr-8")}>
-              <div className="flex items-center gap-2 mb-3">
-                {getSourceIcon(note.source_type)}
-                <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground shrink-0">
-                  {note.source_type}
-                </span>
-                <div className="w-1 h-1 rounded-full bg-border shrink-0" />
-                <SubjectBadge note={note} allSubjects={subjectsList} />
+        {/* Sort dropdown */}
+        <div className="flex items-center gap-2 shrink-0">
+          <ArrowUpDown size={14} className="text-muted-foreground" />
+          <select
+            value={sortBy}
+            onChange={e => setSortBy(e.target.value as any)}
+            className="bg-secondary/30 border border-border rounded-lg px-3 py-1.5 text-xs font-medium outline-none"
+          >
+            <option value="newest">Newest First</option>
+            <option value="oldest">Oldest First</option>
+            <option value="title">Title (A-Z)</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Note Grid / List */}
+      {filteredNotes.length > 0 ? (
+        <div className={clsx(
+          "gap-4", 
+          view === 'grid' ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3" : "flex flex-col"
+        )}>
+          {filteredNotes.map(note => (
+            <Link 
+              key={note.id} 
+              to="/note/$noteId"
+              params={{ noteId: note.id }}
+              className={clsx(
+                "group bg-card border border-border rounded-xl hover:border-primary/40 hover:shadow-md shadow-sm transition-all duration-200 p-6 relative flex flex-col justify-between",
+                view === 'grid' ? "min-h-[220px]" : "flex-row items-center justify-between min-h-[90px]"
+              )}
+            >
+              <div className="absolute top-4 right-4 z-10">
+                <NoteActionsMenu note={note} allSubjects={subjectsList} />
+              </div>
+
+              <div className={clsx(view === 'list' && "flex items-center gap-4 flex-1 pr-8")}>
+                {/* Meta Row */}
+                <div className="flex items-center gap-2 mb-3 flex-wrap pr-6">
+                  {getSourceIcon(note.source_type)}
+                  <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground shrink-0">
+                    {note.source_type}
+                  </span>
+                  <div className="w-1 h-1 rounded-full bg-border shrink-0" />
+                  <SubjectBadge note={note} allSubjects={subjectsList} />
+                  
+                  {note.quality_score && (
+                    <span className="ml-auto text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <Award size={10} />
+                      {note.quality_score.overall}
+                    </span>
+                  )}
+                </div>
+                
+                {/* Title */}
+                <h3 className={clsx(
+                  "font-semibold text-lg line-clamp-2 group-hover:text-primary transition-colors mb-2",
+                  view === 'grid' ? "" : "mb-0"
+                )}>
+                  {note.title}
+                </h3>
+
+                {/* TL;DR snippet preview in grid mode */}
+                {view === 'grid' && note.tldr && (
+                  <p className="text-xs text-muted-foreground line-clamp-2 mb-4 leading-relaxed bg-secondary/20 p-2 rounded border border-border/50">
+                    {note.tldr}
+                  </p>
+                )}
               </div>
               
-              <h3 className={clsx(
-                "font-semibold text-lg line-clamp-2 group-hover:text-primary transition-colors",
-                view === 'grid' ? "mb-auto" : "mb-0"
+              {/* Footer row */}
+              <div className={clsx(
+                "flex items-center justify-between text-xs text-muted-foreground mt-auto pt-3 border-t border-border/40",
+                view === 'list' && "mt-0 pt-0 border-none ml-4 shrink-0 w-48 justify-end"
               )}>
-                {note.title}
-              </h3>
-            </div>
-            
-            <div className={clsx(
-              "flex items-center gap-4 text-xs text-muted-foreground mt-4",
-              view === 'list' && "mt-0 ml-4 flex-shrink-0 w-48 justify-end"
-            )}>
-              <div className="flex items-center gap-1">
-                <Calendar size={14} />
-                <span>{new Date(note.created_at).toLocaleDateString()}</span>
-              </div>
-              {view === 'grid' && (
-                <div className="flex gap-1.5 overflow-hidden">
-                  {note.tags.slice(0, 2).map(tag => (
-                    <span key={tag} className={clsx("px-2.5 py-0.5 rounded-full truncate max-w-[90px] font-medium", getTagColor(tag))}>
-                      {tag}
-                    </span>
-                  ))}
-                  {note.tags.length > 2 && <span className="bg-secondary text-secondary-foreground px-2.5 py-0.5 rounded-full font-medium">+{note.tags.length - 2}</span>}
+                <div className="flex items-center gap-1">
+                  <Calendar size={14} />
+                  <span>{new Date(note.created_at).toLocaleDateString()}</span>
                 </div>
-              )}
-            </div>
-          </Link>
-        ))}
-      </div>
+
+                {view === 'grid' && (
+                  <div className="flex gap-1.5 overflow-hidden">
+                    {note.tags?.slice(0, 2).map(tag => (
+                      <span key={tag} className={clsx("px-2.5 py-0.5 rounded-full truncate max-w-[90px] font-medium", getTagColor(tag))}>
+                        {tag}
+                      </span>
+                    ))}
+                    {note.tags?.length > 2 && <span className="bg-secondary text-secondary-foreground px-2 py-0.5 rounded-full font-medium">+{note.tags.length - 2}</span>}
+                  </div>
+                )}
+              </div>
+            </Link>
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-12 bg-card border border-border rounded-xl">
+          <p className="text-muted-foreground text-sm">No notes match your filters.</p>
+          <button 
+            onClick={() => { setFilterSource('all'); setSearchQuery(''); }}
+            className="text-xs text-primary font-medium hover:underline mt-2"
+          >
+            Clear filters
+          </button>
+        </div>
+      )}
     </div>
   )
 }

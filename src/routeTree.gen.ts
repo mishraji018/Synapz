@@ -16,6 +16,8 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthSearchRouteImport } from './routes/_auth.search'
 import { Route as AuthNewRouteImport } from './routes/_auth.new'
 import { Route as AuthDashboardRouteImport } from './routes/_auth.dashboard'
+import { Route as AuthChatRouteImport } from './routes/_auth.chat'
+import { Route as AuthBookmarksRouteImport } from './routes/_auth.bookmarks'
 import { Route as AuthNoteNoteIdRouteImport } from './routes/_auth.note.$noteId'
 
 const SignupRoute = SignupRouteImport.update({
@@ -52,6 +54,16 @@ const AuthDashboardRoute = AuthDashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => AuthRoute,
 } as any)
+const AuthChatRoute = AuthChatRouteImport.update({
+  id: '/chat',
+  path: '/chat',
+  getParentRoute: () => AuthRoute,
+} as any)
+const AuthBookmarksRoute = AuthBookmarksRouteImport.update({
+  id: '/bookmarks',
+  path: '/bookmarks',
+  getParentRoute: () => AuthRoute,
+} as any)
 const AuthNoteNoteIdRoute = AuthNoteNoteIdRouteImport.update({
   id: '/note/$noteId',
   path: '/note/$noteId',
@@ -62,6 +74,8 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/signup': typeof SignupRoute
+  '/bookmarks': typeof AuthBookmarksRoute
+  '/chat': typeof AuthChatRoute
   '/dashboard': typeof AuthDashboardRoute
   '/new': typeof AuthNewRoute
   '/search': typeof AuthSearchRoute
@@ -71,6 +85,8 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/signup': typeof SignupRoute
+  '/bookmarks': typeof AuthBookmarksRoute
+  '/chat': typeof AuthChatRoute
   '/dashboard': typeof AuthDashboardRoute
   '/new': typeof AuthNewRoute
   '/search': typeof AuthSearchRoute
@@ -82,6 +98,8 @@ export interface FileRoutesById {
   '/_auth': typeof AuthRouteWithChildren
   '/login': typeof LoginRoute
   '/signup': typeof SignupRoute
+  '/_auth/bookmarks': typeof AuthBookmarksRoute
+  '/_auth/chat': typeof AuthChatRoute
   '/_auth/dashboard': typeof AuthDashboardRoute
   '/_auth/new': typeof AuthNewRoute
   '/_auth/search': typeof AuthSearchRoute
@@ -93,6 +111,8 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/signup'
+    | '/bookmarks'
+    | '/chat'
     | '/dashboard'
     | '/new'
     | '/search'
@@ -102,6 +122,8 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/signup'
+    | '/bookmarks'
+    | '/chat'
     | '/dashboard'
     | '/new'
     | '/search'
@@ -112,6 +134,8 @@ export interface FileRouteTypes {
     | '/_auth'
     | '/login'
     | '/signup'
+    | '/_auth/bookmarks'
+    | '/_auth/chat'
     | '/_auth/dashboard'
     | '/_auth/new'
     | '/_auth/search'
@@ -176,6 +200,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthDashboardRouteImport
       parentRoute: typeof AuthRoute
     }
+    '/_auth/chat': {
+      id: '/_auth/chat'
+      path: '/chat'
+      fullPath: '/chat'
+      preLoaderRoute: typeof AuthChatRouteImport
+      parentRoute: typeof AuthRoute
+    }
+    '/_auth/bookmarks': {
+      id: '/_auth/bookmarks'
+      path: '/bookmarks'
+      fullPath: '/bookmarks'
+      preLoaderRoute: typeof AuthBookmarksRouteImport
+      parentRoute: typeof AuthRoute
+    }
     '/_auth/note/$noteId': {
       id: '/_auth/note/$noteId'
       path: '/note/$noteId'
@@ -187,6 +225,8 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthRouteChildren {
+  AuthBookmarksRoute: typeof AuthBookmarksRoute
+  AuthChatRoute: typeof AuthChatRoute
   AuthDashboardRoute: typeof AuthDashboardRoute
   AuthNewRoute: typeof AuthNewRoute
   AuthSearchRoute: typeof AuthSearchRoute
@@ -194,6 +234,8 @@ interface AuthRouteChildren {
 }
 
 const AuthRouteChildren: AuthRouteChildren = {
+  AuthBookmarksRoute: AuthBookmarksRoute,
+  AuthChatRoute: AuthChatRoute,
   AuthDashboardRoute: AuthDashboardRoute,
   AuthNewRoute: AuthNewRoute,
   AuthSearchRoute: AuthSearchRoute,

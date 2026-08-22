@@ -1,4 +1,3 @@
-/// <reference types="npm:@types/deno" />
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 
 const corsHeaders = {
@@ -12,7 +11,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { note_id, question, note_content } = await req.json()
+    const { note_id, question, note_content } = await req.json() as any
 
     if (!question || !note_content) {
       return new Response(JSON.stringify({ error: 'Question and note_content are required' }), {
@@ -31,20 +30,28 @@ ${JSON.stringify(note_content, null, 2)}.
 
 Answer the user's question concisely and accurately based only on this content. If the answer isn't in the content, say so.`
 
+    const model = Deno.env.get('GROQ_MODEL') || 'openai/gpt-oss-120b';
+
+    const requestBody: Record<string, any> = {
+      model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: question }
+      ],
+      temperature: 0.3
+    };
+
+    if (model.includes('gpt-oss') || model.includes('reasoning')) {
+      requestBody.reasoning_effort = 'low';
+    }
+
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: question }
-        ],
-        temperature: 0.3
-      }),
+      body: JSON.stringify(requestBody),
     })
 
     if (!response.ok) {
@@ -53,7 +60,7 @@ Answer the user's question concisely and accurately based only on this content. 
       throw new Error(`Groq API returned status ${response.status}`);
     }
 
-    const data = await response.json()
+    const data: any = await response.json()
     const rawResponse = data.choices[0]?.message?.content || '';
 
     return new Response(rawResponse, {
