@@ -6,17 +6,19 @@ interface BulletSummaryProps {
   data: Note['bullet_summary']
 }
 
-export function BulletSummary({ data }: BulletSummaryProps) {
+export function BulletSummary({ data = [] }: BulletSummaryProps) {
   const [copied, setCopied] = useState(false)
 
+  const bullets = data || []
+
   const handleCopy = () => {
-    const textToCopy = data.map(bullet => `• ${bullet}`).join('\n')
+    const textToCopy = bullets.map(bullet => `• ${bullet}`).join('\n')
     navigator.clipboard.writeText(textToCopy)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
 
-  if (!data.length) return null
+  if (!bullets.length) return null
 
   return (
     <div className="bg-card border border-border rounded-xl p-6 md:p-8 relative group max-w-4xl mx-auto shadow-sm hover:shadow-md transition-shadow duration-300">
@@ -32,7 +34,7 @@ export function BulletSummary({ data }: BulletSummaryProps) {
       <h3 className="text-xl font-bold mb-6">Key Takeaways</h3>
       
       <ul className="space-y-4">
-        {data.map((bullet, index) => (
+        {bullets.map((bullet, index) => (
           <li key={index} className="flex gap-4 items-start">
             <div className="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center flex-shrink-0 mt-0.5">
               <span className="text-sm font-bold">{index + 1}</span>

@@ -26,12 +26,15 @@ export function TreemapView({
   const [isAddingNote, setIsAddingNote] = useState(false)
   const [isSubmittingNote, setIsSubmittingNote] = useState(false)
 
+  const subtopics = data?.subtopics || []
+  const mainTopic = data?.main_topic || 'Main Topic'
+
   const chartData = [{
-    name: data.main_topic,
-    children: data.subtopics.map(sub => ({
+    name: mainTopic,
+    children: subtopics.map(sub => ({
       name: sub.name,
       size: sub.weight || 10,
-      points: sub.points,
+      points: sub.points || [],
     }))
   }]
 
@@ -59,7 +62,7 @@ export function TreemapView({
       subtopicId,
       'treemap_node',
       selectedSubtopic.name,
-      selectedSubtopic.points.slice(0, 2).join(' • ')
+      (selectedSubtopic.points || []).slice(0, 2).join(' • ')
     )
   }
 
@@ -67,7 +70,7 @@ export function TreemapView({
     const { x, y, width, height, index, name, depth } = props
     if (depth !== 1) return null
     
-    const originalSubtopic = data.subtopics.find(s => s.name === name)
+    const originalSubtopic = subtopics.find(s => s.name === name)
 
     return (
       <g>

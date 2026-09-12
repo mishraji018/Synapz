@@ -1,15 +1,11 @@
-import { Outlet, createFileRoute, useNavigate } from '@tanstack/react-router'
+import { Outlet, useNavigate } from 'react-router-dom'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { Topbar } from '@/components/layout/Topbar'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useEffect } from 'react'
 import { Loader2 } from 'lucide-react'
 
-export const Route = createFileRoute('/_auth')({
-  component: AuthLayout,
-})
-
-function AuthLayout() {
+export function AuthLayout() {
   const { user, initialized, initialize } = useAuthStore()
   const navigate = useNavigate()
 
@@ -19,7 +15,7 @@ function AuthLayout() {
 
   useEffect(() => {
     if (initialized && !user) {
-      navigate({ to: '/login', replace: true })
+      navigate('/login', { replace: true })
     }
   }, [initialized, user, navigate])
 
@@ -31,7 +27,7 @@ function AuthLayout() {
     )
   }
 
-  // We are initialized, but if user is null, the useEffect above will redirect
+  // If not logged in, redirection above will run
   if (!user) return null
 
   return (

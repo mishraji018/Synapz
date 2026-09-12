@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { Link } from 'react-router-dom'
 import { useState, useRef, useEffect } from 'react'
 import { api } from '@/lib/api'
 import { GlobalChatMessage } from '@/lib/types'
@@ -17,10 +17,6 @@ import {
 } from 'lucide-react'
 import { clsx } from 'clsx'
 
-export const Route = createFileRoute('/_auth/chat')({
-  component: GlobalChat,
-})
-
 const starterQuestions = [
   "What are the main key takeaways across all my notes?",
   "List all pending action items from my documents",
@@ -28,7 +24,7 @@ const starterQuestions = [
   "What topics or entities appear most frequently in my notes?",
 ]
 
-function GlobalChat() {
+export function GlobalChat() {
   const [messages, setMessages] = useState<GlobalChatMessage[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -183,8 +179,7 @@ function GlobalChat() {
                       {msg.citations.map((c, idx) => (
                         <Link
                           key={idx}
-                          to="/note/$noteId"
-                          params={{ noteId: c.document_id }}
+                          to={`/note/${c.document_id}`}
                           className="bg-card hover:bg-secondary border border-border px-3 py-1.5 rounded-lg text-xs font-medium text-foreground flex items-center gap-2 hover:border-primary/40 transition-all group/chip max-w-[260px]"
                         >
                           <span className="truncate">{c.document_title}</span>

@@ -41,12 +41,15 @@ export function MindmapCanvas({
   const [isAddingNote, setIsAddingNote] = useState(false)
   const [isSubmittingNote, setIsSubmittingNote] = useState(false)
 
+  const rawNodes = data?.nodes || []
+  const rawEdges = data?.edges || []
+
   // Calculate layout positions
-  const rootId = data.nodes[0]?.id
-  const outgoingEdgesFromRoot = data.edges.filter(e => e.source === rootId)
+  const rootId = rawNodes[0]?.id
+  const outgoingEdgesFromRoot = rawEdges.filter(e => e.source === rootId)
   const childIdsOfRoot = new Set(outgoingEdgesFromRoot.map(e => e.target))
 
-  const initialNodes: Node[] = data.nodes.map((n, i) => {
+  const initialNodes: Node[] = rawNodes.map((n, i) => {
     const isRoot = i === 0
     const isLevel1 = childIdsOfRoot.has(n.id)
     const hasNotes = nodeAnnotations.some(a => a.node_id === n.id)
@@ -91,7 +94,7 @@ export function MindmapCanvas({
     }
   })
 
-  const initialEdges: Edge[] = data.edges.map((e) => ({
+  const initialEdges: Edge[] = rawEdges.map((e) => ({
     id: `e${e.source}-${e.target}`,
     source: e.source,
     target: e.target,

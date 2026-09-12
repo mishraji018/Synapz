@@ -39,10 +39,14 @@ export const api = {
 
     if (error) {
       console.error("Edge function error:", error);
-      throw new Error("Failed to get answer");
+      throw new Error(error.message || "Failed to get answer");
     }
 
-    return data;
+    if (data && typeof data === 'object' && data.error) {
+      throw new Error(data.error);
+    }
+
+    return typeof data === 'string' ? data : (data?.answer || data?.response || JSON.stringify(data));
   },
 
   askGlobalKnowledge: async (
@@ -71,7 +75,11 @@ export const api = {
 
     if (error) {
       console.error("Ask knowledge edge function error:", error);
-      throw new Error("Failed to search knowledge base");
+      throw new Error(error.message || "Failed to search knowledge base");
+    }
+
+    if (data?.error) {
+      throw new Error(data.error);
     }
 
     return {

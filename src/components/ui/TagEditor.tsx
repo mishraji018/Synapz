@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Plus, X, Tag } from 'lucide-react'
 
 interface TagEditorProps {
-  initialTags: string[]
+  initialTags?: string[]
   onTagsChange?: (tags: string[]) => void
 }
 
@@ -20,10 +20,14 @@ function getTagColor(tag: string) {
   return tagColors[Math.abs(hash) % tagColors.length]
 }
 
-export function TagEditor({ initialTags, onTagsChange }: TagEditorProps) {
-  const [tags, setTags] = useState(initialTags)
+export function TagEditor({ initialTags = [], onTagsChange }: TagEditorProps) {
+  const [tags, setTags] = useState<string[]>(initialTags || [])
   const [isEditing, setIsEditing] = useState(false)
   const [newTag, setNewTag] = useState('')
+
+  useEffect(() => {
+    setTags(initialTags || [])
+  }, [initialTags])
 
   const handleAddTag = () => {
     if (newTag.trim() && !tags.includes(newTag.trim())) {

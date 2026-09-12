@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { Note, BookmarkedItem } from '@/lib/types'
@@ -16,10 +16,6 @@ import {
 } from 'lucide-react'
 import { clsx } from 'clsx'
 
-export const Route = createFileRoute('/_auth/bookmarks')({
-  component: BookmarksPage,
-})
-
 type FilterType = 'all' | 'document' | 'mindmap_node' | 'treemap_node' | 'timeline_step' | 'flashcard'
 
 function getBookmarkIcon(type: BookmarkedItem['target_type']) {
@@ -33,7 +29,7 @@ function getBookmarkIcon(type: BookmarkedItem['target_type']) {
   }
 }
 
-function BookmarksPage() {
+export function BookmarksPage() {
   const [filterType, setFilterType] = useState<FilterType>('all')
   const queryClient = useQueryClient()
 
@@ -157,8 +153,7 @@ function BookmarksPage() {
               {/* Action Buttons */}
               <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
                 <Link
-                  to="/note/$noteId"
-                  params={{ noteId: note.id }}
+                  to={`/note/${note.id}`}
                   className="px-3.5 py-1.5 bg-primary/10 hover:bg-primary text-primary hover:text-primary-foreground rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5"
                 >
                   <span>Open Note</span>

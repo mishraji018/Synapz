@@ -48,7 +48,7 @@ JSON SCHEMA:
 
     const userPrompt = `Document Title: ${note_title || 'Untitled Study Note'}\n\nDocument Summary & Content:\n${typeof note_content === 'string' ? note_content : JSON.stringify(note_content, null, 2)}`
 
-    const model = Deno.env.get('GROQ_MODEL') || 'openai/gpt-oss-120b';
+    const model = Deno.env.get('GROQ_MODEL') || 'llama-3.3-70b-versatile';
 
     const requestBody: Record<string, any> = {
       model,
@@ -60,7 +60,7 @@ JSON SCHEMA:
       response_format: { type: "json_object" }
     };
 
-    if (model.includes('gpt-oss') || model.includes('reasoning')) {
+    if (model.includes('gpt-oss') || model.includes('reasoning') || model.includes('deepseek-r1')) {
       requestBody.reasoning_effort = 'low';
     }
 

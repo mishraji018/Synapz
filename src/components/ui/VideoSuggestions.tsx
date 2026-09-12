@@ -5,8 +5,9 @@ interface VideoSuggestionsProps {
   videos: Note['suggested_videos']
 }
 
-export function VideoSuggestions({ videos }: VideoSuggestionsProps) {
-  if (!videos.length) return null
+export function VideoSuggestions({ videos = [] }: VideoSuggestionsProps) {
+  const safeVideos = videos || []
+  if (!safeVideos.length) return null
 
   return (
     <div className="max-w-4xl mx-auto mt-12">

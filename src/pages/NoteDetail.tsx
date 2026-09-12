@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { Note, SummaryOptions, BookmarkedItem } from '@/lib/types'
@@ -41,10 +41,6 @@ import {
   GraduationCap,
   Loader2
 } from 'lucide-react'
-
-export const Route = createFileRoute('/_auth/note/$noteId')({
-  component: NoteDetail,
-})
 
 type TabType = 'bullets' | 'treemap' | 'mindmap' | 'flashcards' | 'timeline' | 'quiz'
 
@@ -138,8 +134,8 @@ function EditableSubject({ initialSubject, noteId }: { initialSubject: string, n
   )
 }
 
-function NoteDetail() {
-  const { noteId } = Route.useParams()
+export function NoteDetail() {
+  const { noteId } = useParams<{ noteId: string }>()
   const [activeTab, setActiveTab] = useState<TabType>('bullets')
   const [showConfirmDelete, setShowConfirmDelete] = useState(false)
   const [showRegenerateMenu, setShowRegenerateMenu] = useState(false)
@@ -150,11 +146,12 @@ function NoteDetail() {
 
   const { data: note, isLoading } = useQuery({
     queryKey: ['note', noteId],
-    queryFn: () => api.getNoteById(noteId),
+    queryFn: () => (noteId ? api.getNoteById(noteId) : Promise.resolve(undefined)),
+    enabled: !!noteId,
   })
 
   const updateMutation = useMutation({
-    mutationFn: (updates: Partial<Note>) => api.updateNote(noteId, updates),
+    mutationFn: (updates: Partial<Note>) => (noteId ? api.updateNote(noteId, updates) : Promise.resolve()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['note', noteId] })
       queryClient.invalidateQueries({ queryKey: ['notes'] })
@@ -162,7 +159,7 @@ function NoteDetail() {
   })
 
   const deleteMutation = useMutation({
-    mutationFn: () => api.deleteNote(noteId),
+    mutationFn: () => (noteId ? api.deleteNote(noteId) : Promise.resolve()),
     onMutate: async () => {
       await queryClient.cancelQueries({ queryKey: ['notes'] })
       const previousNotes = queryClient.getQueryData<Note[]>(['notes'])
@@ -179,11 +176,12 @@ function NoteDetail() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notes'] })
-      navigate({ to: '/dashboard', replace: true })
+      navigate('/dashboard', { replace: true })
     }
   })
 
   const handleRegenerate = async (options: SummaryOptions) => {
+    if (!noteId) return
     setShowRegenerateMenu(false)
     setIsRegenerating(true)
     try {
@@ -199,6 +197,7 @@ function NoteDetail() {
 
   // Annotation Handlers
   const handleAddAnnotation = async (nodeId: string, nodeLabel: string, content: string) => {
+    if (!noteId) return
     await api.addNodeAnnotation(noteId, {
       node_id: nodeId,
       node_label: nodeLabel,
@@ -210,6 +209,7 @@ function NoteDetail() {
   }
 
   const handleDeleteAnnotation = async (annotationId: string) => {
+    if (!noteId) return
     await api.deleteNodeAnnotation(noteId, annotationId)
     queryClient.invalidateQueries({ queryKey: ['note', noteId] })
     queryClient.invalidateQueries({ queryKey: ['notes'] })
@@ -222,6 +222,7 @@ function NoteDetail() {
     label: string, 
     detail?: string
   ) => {
+    if (!noteId) return
     await api.toggleBookmark(noteId, {
       target_id: targetId,
       target_type: targetType,

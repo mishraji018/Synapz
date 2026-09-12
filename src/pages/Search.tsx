@@ -1,13 +1,9 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
-import { useState, useMemo } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { useState, useMemo, useEffect } from 'react'
 import { Search as SearchIcon, FileText, Network, Layers, StickyNote, Target, ExternalLink } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { clsx } from 'clsx'
-
-export const Route = createFileRoute('/_auth/search')({
-  component: Search,
-})
 
 type SearchTab = 'all' | 'documents' | 'nodes' | 'insights' | 'notes' | 'flashcards'
 
@@ -21,9 +17,17 @@ interface SearchResultItem {
   sourceType: string
 }
 
-function Search() {
-  const [query, setQuery] = useState('')
+export function Search() {
+  const [searchParams] = useSearchParams()
+  const qParam = searchParams.get('q') || ''
+  const [query, setQuery] = useState(qParam)
   const [activeTab, setActiveTab] = useState<SearchTab>('all')
+
+  useEffect(() => {
+    if (qParam) {
+      setQuery(qParam)
+    }
+  }, [qParam])
 
   const { data: notes, isLoading } = useQuery({
     queryKey: ['notes'],
@@ -264,8 +268,7 @@ function Search() {
                 {filteredResults.map(item => (
                   <Link 
                     key={item.id}
-                    to="/note/$noteId"
-                    params={{ noteId: item.noteId }}
+                    to={`/note/${item.noteId}`}
                     className="block bg-card border border-border hover:border-primary/40 rounded-xl p-4 shadow-sm transition-all group"
                   >
                     <div className="flex items-center justify-between gap-2 mb-1.5">

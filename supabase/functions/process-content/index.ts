@@ -124,7 +124,7 @@ Deno.serve(async (req: Request) => {
 
     const promptMessage = `Source Type: ${source_type}\nOptional Title: ${title || 'None'}\n\nContent:\n${content}`;
 
-    const model = Deno.env.get('GROQ_MODEL') || 'openai/gpt-oss-120b';
+    const model = Deno.env.get('GROQ_MODEL') || 'llama-3.3-70b-versatile';
 
     // 4. Call Groq API
     const requestBody: Record<string, any> = {
@@ -137,7 +137,7 @@ Deno.serve(async (req: Request) => {
       response_format: { type: "json_object" }
     };
 
-    if (model.includes('gpt-oss') || model.includes('reasoning')) {
+    if (model.includes('gpt-oss') || model.includes('reasoning') || model.includes('deepseek-r1')) {
       requestBody.reasoning_effort = 'low';
     }
 

@@ -30,7 +30,7 @@ ${JSON.stringify(note_content, null, 2)}.
 
 Answer the user's question concisely and accurately based only on this content. If the answer isn't in the content, say so.`
 
-    const model = Deno.env.get('GROQ_MODEL') || 'openai/gpt-oss-120b';
+    const model = Deno.env.get('GROQ_MODEL') || 'llama-3.3-70b-versatile';
 
     const requestBody: Record<string, any> = {
       model,
@@ -41,7 +41,7 @@ Answer the user's question concisely and accurately based only on this content. 
       temperature: 0.3
     };
 
-    if (model.includes('gpt-oss') || model.includes('reasoning')) {
+    if (model.includes('gpt-oss') || model.includes('reasoning') || model.includes('deepseek-r1')) {
       requestBody.reasoning_effort = 'low';
     }
 

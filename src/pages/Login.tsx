@@ -1,54 +1,39 @@
-import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
+import { Link, useNavigate } from 'react-router-dom'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Loader2 } from 'lucide-react'
+import { SynapzLogo } from '@/components/ui/SynapzLogo'
 
-export const Route = createFileRoute('/signup')({
-  component: Signup,
-})
-
-function Signup() {
-  const [name, setName] = useState('')
+export function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const navigate = useNavigate()
 
-  const handleSignup = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
     setLoading(true)
     
-    // We pass name in user_metadata if we want to store it
-    const { error } = await supabase.auth.signUp({
+    const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
-      options: {
-        data: {
-          full_name: name,
-        }
-      }
     })
 
     if (error) {
       setError(error.message)
       setLoading(false)
     } else {
-      // Assuming email confirmation is disabled, user is immediately logged in
-      navigate({ to: '/dashboard', replace: true })
+      navigate('/dashboard', { replace: true })
     }
   }
 
   return (
     <div className="min-h-screen bg-background flex flex-col justify-center items-center p-4">
-      <div className="w-full max-w-md bg-card border border-border rounded-xl shadow-sm p-8">
-        <div className="text-center mb-8">
-          <div className="w-12 h-12 bg-primary text-primary-foreground rounded-xl mx-auto flex items-center justify-center font-bold text-xl mb-4">
-            AI
-          </div>
-          <h1 className="text-2xl font-bold text-foreground">Create an account</h1>
-          <p className="text-muted-foreground mt-2">Start summarizing your content today</p>
+      <div className="w-full max-w-md bg-card border border-border/80 rounded-2xl shadow-sm p-8">
+        <div className="flex flex-col items-center text-center mb-8">
+          <SynapzLogo size="lg" subtitle="Sign in to your AI workspace" className="justify-center mb-2" />
         </div>
 
         {error && (
@@ -57,18 +42,7 @@ function Signup() {
           </div>
         )}
 
-        <form className="space-y-4" onSubmit={handleSignup}>
-          <div>
-            <label className="block text-sm font-medium mb-1">Full Name</label>
-            <input 
-              type="text" 
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="John Doe" 
-              className="w-full px-3 py-2 border border-border rounded-md bg-background focus:ring-2 focus:ring-ring outline-none"
-              required
-            />
-          </div>
+        <form className="space-y-4" onSubmit={handleLogin}>
           <div>
             <label className="block text-sm font-medium mb-1">Email</label>
             <input 
@@ -89,22 +63,28 @@ function Signup() {
               placeholder="••••••••" 
               className="w-full px-3 py-2 border border-border rounded-md bg-background focus:ring-2 focus:ring-ring outline-none"
               required
-              minLength={6}
             />
+          </div>
+          <div className="flex items-center justify-between">
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              <input type="checkbox" className="rounded border-border text-primary focus:ring-ring" />
+              Remember me
+            </label>
+            <a href="#" className="text-sm text-primary hover:underline">Forgot password?</a>
           </div>
           
           <button 
             type="submit" 
             disabled={loading}
-            className="w-full bg-primary text-primary-foreground font-medium py-2 rounded-md hover:opacity-90 transition-opacity mt-2 flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+            className="w-full bg-primary text-primary-foreground font-medium py-2 rounded-md hover:opacity-90 transition-opacity flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
           >
             {loading && <Loader2 size={16} className="animate-spin" />}
-            {loading ? 'Creating account...' : 'Sign Up'}
+            {loading ? 'Signing In...' : 'Sign In'}
           </button>
         </form>
 
         <div className="mt-6 text-center text-sm text-muted-foreground">
-          Already have an account? <Link to="/login" className="text-primary hover:underline font-medium">Sign in</Link>
+          Don't have an account? <Link to="/signup" className="text-primary hover:underline font-medium">Sign up</Link>
         </div>
       </div>
     </div>

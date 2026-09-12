@@ -1,14 +1,10 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useState, useRef } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useState, useRef, useEffect } from 'react'
 import { FileText, Link as LinkIcon, Upload, PlaySquare, ArrowRight, Loader2, File as FileIcon, X, ChevronDown, ChevronUp, Sparkles, Settings2 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { api } from '@/lib/api'
 import { supabase } from '@/lib/supabase'
 import { SummaryOptions } from '@/lib/types'
-
-export const Route = createFileRoute('/_auth/new')({
-  component: NewNote,
-})
 
 type TabType = 'text' | 'upload' | 'youtube' | 'article'
 
@@ -91,8 +87,18 @@ function getFileType(file: File): 'pdf' | 'docx' | 'txt' | null {
   return null
 }
 
-function NewNote() {
-  const [activeTab, setActiveTab] = useState<TabType>('text')
+export function NewNote() {
+  const [searchParams] = useSearchParams()
+  const paramType = searchParams.get('type') as TabType
+  const [activeTab, setActiveTab] = useState<TabType>(
+    paramType && ['text', 'upload', 'youtube', 'article'].includes(paramType) ? paramType : 'text'
+  )
+
+  useEffect(() => {
+    if (paramType && ['text', 'upload', 'youtube', 'article'].includes(paramType)) {
+      setActiveTab(paramType)
+    }
+  }, [paramType])
   const [loading, setLoading] = useState(false)
   const [loadingMessage, setLoadingMessage] = useState("Analyzing your content...")
   const [subject, setSubject] = useState('')
@@ -238,7 +244,7 @@ function NewNote() {
 
       setLoadingMessage("AI is generating your summary...")
       const note = await api.createNote(sourceType as any, subject, content, summaryOptions)
-      navigate({ to: '/note/$noteId', params: { noteId: note.id } })
+      navigate(`/note/${note.id}`)
     } catch (err: any) {
       console.error(err)
       setError(err.message || 'Failed to process content, please try again')

@@ -13,19 +13,20 @@ interface TimelineViewProps {
 }
 
 export function TimelineView({ 
-  data,
+  data = [],
   noteAnnotations = [],
   bookmarks = [],
   onAddAnnotation,
   onDeleteAnnotation,
   onToggleBookmark
 }: TimelineViewProps) {
+  const safeData = data || []
   const [expandedIndex, setExpandedIndex] = useState<number | null>(0)
   const [activeStepForNote, setActiveStepForNote] = useState<string | null>(null)
   const [noteInputText, setNoteInputText] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  if (!data.length) return null
+  if (!safeData.length) return null
 
   const handleSaveStepNote = async (stepId: string, stepTitle: string) => {
     if (!noteInputText.trim() || !onAddAnnotation) return
@@ -42,7 +43,7 @@ export function TimelineView({
   return (
     <div className="max-w-3xl mx-auto py-8 px-4">
       <div className="relative border-l-2 border-border ml-4 md:ml-6 space-y-8">
-        {data.map((item, index) => {
+        {safeData.map((item, index) => {
           const isExpanded = expandedIndex === index
           const stepId = `timeline_step_${index + 1}`
           const stepNotes = noteAnnotations.filter(a => a.node_id === stepId)

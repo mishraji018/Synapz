@@ -9,7 +9,8 @@ interface FlashcardDeckProps {
   onToggleBookmark?: (targetId: string, targetType: BookmarkedItem['target_type'], label: string, detail?: string) => Promise<void>
 }
 
-export function FlashcardDeck({ cards, bookmarks = [], onToggleBookmark }: FlashcardDeckProps) {
+export function FlashcardDeck({ cards = [], bookmarks = [], onToggleBookmark }: FlashcardDeckProps) {
+  const safeCards = cards || []
   const [currentIndex, setCurrentIndex] = useState(0)
   const [isFlipped, setIsFlipped] = useState(false)
   const [isRevisionMode, setIsRevisionMode] = useState(false)
@@ -21,7 +22,7 @@ export function FlashcardDeck({ cards, bookmarks = [], onToggleBookmark }: Flash
   const handleNext = () => {
     setIsFlipped(false)
     setTimeout(() => {
-      if (currentIndex < cards.length - 1) {
+      if (currentIndex < safeCards.length - 1) {
         setCurrentIndex(prev => prev + 1)
       } else if (isRevisionMode) {
         setSessionCompleted(true)
@@ -34,7 +35,7 @@ export function FlashcardDeck({ cards, bookmarks = [], onToggleBookmark }: Flash
   const handlePrev = () => {
     setIsFlipped(false)
     setTimeout(() => {
-      setCurrentIndex(prev => (prev - 1 + cards.length) % cards.length)
+      setCurrentIndex(prev => (prev - 1 + safeCards.length) % safeCards.length)
     }, 150)
   }
 
@@ -74,11 +75,11 @@ export function FlashcardDeck({ cards, bookmarks = [], onToggleBookmark }: Flash
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [cards.length, isRevisionMode, isFlipped, sessionCompleted, currentIndex])
+  }, [safeCards.length, isRevisionMode, isFlipped, sessionCompleted, currentIndex])
 
-  if (!cards.length) return null
+  if (!safeCards.length) return null
 
-  const currentCard = cards[currentIndex]
+  const currentCard = safeCards[currentIndex] || { question: '', answer: '' }
   const cardId = `flashcard_${currentIndex + 1}`
   const isBookmarked = bookmarks.some(b => b.target_id === cardId)
 

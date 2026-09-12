@@ -134,7 +134,7 @@ ${formattedKnowledgeChunks.join('\n\n')}
       { role: 'user', content: question }
     ]
 
-    const model = Deno.env.get('GROQ_MODEL') || 'openai/gpt-oss-120b';
+    const model = Deno.env.get('GROQ_MODEL') || 'llama-3.3-70b-versatile';
 
     const requestBody: Record<string, any> = {
       model,
@@ -143,7 +143,7 @@ ${formattedKnowledgeChunks.join('\n\n')}
       max_tokens: 1024,
     };
 
-    if (model.includes('gpt-oss') || model.includes('reasoning')) {
+    if (model.includes('gpt-oss') || model.includes('reasoning') || model.includes('deepseek-r1')) {
       requestBody.reasoning_effort = 'low';
     }
 

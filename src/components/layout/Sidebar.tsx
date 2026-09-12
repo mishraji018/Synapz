@@ -1,4 +1,4 @@
-import { Link } from '@tanstack/react-router'
+import { Link, NavLink, useLocation, useSearchParams } from 'react-router-dom'
 import { Folder, Home, Plus, Search, LogOut, Edit2, Trash2, Compass, Star } from 'lucide-react'
 import { useUIStore } from '@/store/useUIStore'
 import { useAuthStore } from '@/store/useAuthStore'
@@ -8,11 +8,16 @@ import { supabase } from '@/lib/supabase'
 import { useState, useMemo } from 'react'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { Note } from '@/lib/types'
+import { clsx } from 'clsx'
+import { SynapzLogo } from '@/components/ui/SynapzLogo'
 
 function SubjectItem({ subject }: { subject: string }) {
   const [isEditing, setIsEditing] = useState(false)
   const [value, setValue] = useState(subject)
   const [showConfirmDelete, setShowConfirmDelete] = useState(false)
+  const location = useLocation()
+  const [searchParams] = useSearchParams()
+  const isSelected = location.pathname === '/dashboard' && searchParams.get('subject') === subject
   const queryClient = useQueryClient()
   
   const renameMutation = useMutation({
@@ -91,11 +96,13 @@ function SubjectItem({ subject }: { subject: string }) {
   return (
     <>
       <Link
-        to="/dashboard"
-        search={{ subject }}
-        activeProps={{ className: "bg-secondary text-secondary-foreground font-semibold" }}
-        inactiveProps={{ className: "text-muted-foreground hover:bg-secondary/50 hover:text-foreground" }}
-        className="flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors group"
+        to={`/dashboard?subject=${encodeURIComponent(subject)}`}
+        className={clsx(
+          "flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors group",
+          isSelected
+            ? "bg-secondary text-secondary-foreground font-semibold"
+            : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+        )}
       >
         <div className="flex items-center gap-2.5 overflow-hidden">
           <Folder size={16} className="shrink-0 text-muted-foreground group-hover:text-foreground" />
@@ -164,81 +171,90 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="w-64 border-r border-border bg-card flex flex-col h-screen select-none">
-      {/* Brand Header */}
-      <div className="p-4 flex items-center gap-3 border-b border-border">
-        <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-primary to-indigo-500 flex items-center justify-center text-primary-foreground font-bold shadow-sm">
-          VN
-        </div>
-        <div>
-          <span className="font-bold text-base block leading-tight">Visual Notes</span>
-          <span className="text-[10px] text-muted-foreground tracking-wider uppercase font-semibold">AI Knowledge Base</span>
-        </div>
+    <aside className="w-64 border-r border-border/80 bg-card/95 backdrop-blur-md flex flex-col h-screen select-none">
+      {/* Brand Header with 2s Timelapse Animated Logo */}
+      <div className="p-4 flex items-center border-b border-border/80">
+        <Link to="/dashboard" className="hover:opacity-90 transition-opacity">
+          <SynapzLogo size="md" subtitle="AI Knowledge Studio" />
+        </Link>
       </div>
 
       {/* New Note Button */}
-      <div className="p-4">
+      <div className="p-3.5">
         <Link
           to="/new"
-          className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2.5 rounded-xl hover:opacity-90 transition-all font-semibold w-full justify-center shadow-sm text-sm"
+          className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:opacity-95 text-white px-4 py-2.5 rounded-xl transition-all font-bold w-full justify-center shadow-md shadow-indigo-500/20 text-sm hover:scale-[1.02] active:scale-[0.98]"
         >
           <Plus size={16} />
-          <span>New Note</span>
+          <span>New AI Note</span>
         </Link>
       </div>
 
       {/* Navigation Links */}
-      <nav className="flex-1 overflow-y-auto px-3 py-2 space-y-1">
-        <Link
+      <nav className="flex-1 overflow-y-auto px-3 py-2 space-y-1 scrollbar-none">
+        <NavLink
           to="/dashboard"
-          activeProps={{ className: "bg-secondary text-secondary-foreground font-semibold shadow-xs" }}
-          inactiveProps={{ className: "text-muted-foreground hover:bg-secondary/50 hover:text-foreground" }}
-          className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors"
+          end
+          className={({ isActive }) => clsx(
+            "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all",
+            isActive 
+              ? "bg-primary/10 text-primary font-bold shadow-xs border border-primary/20" 
+              : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
+          )}
         >
-          <Home size={17} />
+          <Home size={18} />
           <span>Dashboard</span>
-        </Link>
+        </NavLink>
 
-        <Link
+        <NavLink
           to="/chat"
-          activeProps={{ className: "bg-secondary text-secondary-foreground font-semibold shadow-xs" }}
-          inactiveProps={{ className: "text-muted-foreground hover:bg-secondary/50 hover:text-foreground" }}
-          className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors group"
+          className={({ isActive }) => clsx(
+            "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all group",
+            isActive 
+              ? "bg-purple-500/10 text-purple-600 dark:text-purple-400 font-bold shadow-xs border border-purple-500/20" 
+              : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
+          )}
         >
-          <Compass size={17} className="text-primary group-hover:rotate-45 transition-transform duration-300" />
-          <span className="flex-1">Ask My Knowledge</span>
-          <span className="bg-primary/10 text-primary px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">AI</span>
-        </Link>
+          <Compass size={18} className="text-purple-500 group-hover:rotate-45 transition-transform duration-300" />
+          <span className="flex-1">Ask Knowledge</span>
+          <span className="bg-purple-500/15 text-purple-600 dark:text-purple-400 px-1.5 py-0.5 rounded-md text-[10px] font-extrabold uppercase tracking-wider">AI</span>
+        </NavLink>
 
-        <Link
+        <NavLink
           to="/bookmarks"
-          activeProps={{ className: "bg-secondary text-secondary-foreground font-semibold shadow-xs" }}
-          inactiveProps={{ className: "text-muted-foreground hover:bg-secondary/50 hover:text-foreground" }}
-          className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors"
+          className={({ isActive }) => clsx(
+            "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all",
+            isActive 
+              ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold shadow-xs border border-amber-500/20" 
+              : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
+          )}
         >
-          <Star size={17} className="text-amber-500" />
+          <Star size={18} className="text-amber-500" />
           <span className="flex-1">Bookmarks</span>
           {totalBookmarks > 0 && (
-            <span className="bg-amber-500/10 text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded-full text-xs font-bold">
+            <span className="bg-amber-500/15 text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded-full text-xs font-bold">
               {totalBookmarks}
             </span>
           )}
-        </Link>
+        </NavLink>
 
-        <Link
+        <NavLink
           to="/search"
-          activeProps={{ className: "bg-secondary text-secondary-foreground font-semibold shadow-xs" }}
-          inactiveProps={{ className: "text-muted-foreground hover:bg-secondary/50 hover:text-foreground" }}
-          className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors"
+          className={({ isActive }) => clsx(
+            "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all",
+            isActive 
+              ? "bg-blue-500/10 text-blue-600 dark:text-blue-400 font-bold shadow-xs border border-blue-500/20" 
+              : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
+          )}
         >
-          <Search size={17} />
+          <Search size={18} />
           <span>Search</span>
-        </Link>
+        </NavLink>
         
         {/* Subjects List */}
         <div className="pt-5 pb-1 px-3 flex items-center justify-between">
-          <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Subjects</span>
-          <span className="text-xs text-muted-foreground font-medium">{subjects.length}</span>
+          <span className="text-[11px] font-extrabold text-muted-foreground uppercase tracking-wider">Subjects</span>
+          <span className="text-xs text-muted-foreground font-semibold px-2 py-0.5 rounded-full bg-secondary/60">{subjects.length}</span>
         </div>
         
         <div className="space-y-0.5">
@@ -249,10 +265,10 @@ export function Sidebar() {
       </nav>
 
       {/* User Footer Profile */}
-      <div className="p-4 border-t border-border mt-auto bg-secondary/10">
+      <div className="p-3.5 border-t border-border/80 mt-auto bg-secondary/20">
         <div className="flex items-center justify-between group">
           <div className="flex items-center gap-2.5 flex-1 overflow-hidden">
-            <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs flex-shrink-0">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-500 text-white flex items-center justify-center font-extrabold text-xs shrink-0 shadow-xs">
               {user?.email?.charAt(0).toUpperCase() || 'U'}
             </div>
             <div className="flex flex-col overflow-hidden">

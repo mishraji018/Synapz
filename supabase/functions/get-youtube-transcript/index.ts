@@ -22,9 +22,9 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    const rapidApiKey = Deno.env.get('RAPIDAPI_KEY');
+    const rapidApiKey = Deno.env.get('RAPIDAPI_KEY') || Deno.env.get('RAPID_API_KEY');
     if (!rapidApiKey) {
-      throw new Error("RAPIDAPI_KEY environment variable is missing.");
+      throw new Error("RAPIDAPI_KEY (or RAPID_API_KEY) environment variable is missing.");
     }
 
     const videoUrl = `https://www.youtube.com/watch?v=${video_id}`;
