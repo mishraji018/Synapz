@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { RefreshCw, ShieldCheck, AlertCircle } from 'lucide-react'
+import { generateCustomAuthCode } from '@/lib/customAuthCode'
 
 interface CaptchaProps {
   onValidate: (isValid: boolean) => void;
@@ -12,14 +13,9 @@ export function CaptchaChallenge({ onValidate, className = '' }: CaptchaProps) {
   const [isValidated, setIsValidated] = useState<boolean | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
-  // Generate random 6-character alphanumeric captcha
+  // Generate 6-character captcha with format: 2 Letters + 2 Digits + 1 Letter + 1 Digit (e.g. BT46K6)
   const generateCaptchaText = () => {
-    const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'
-    let text = ''
-    for (let i = 0; i < 6; i++) {
-      text += chars.charAt(Math.floor(Math.random() * chars.length))
-    }
-    return text
+    return generateCustomAuthCode()
   }
 
   // Draw noisy, distorted text onto Canvas
