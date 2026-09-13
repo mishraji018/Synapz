@@ -1,10 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
-
-// CORS headers for browser requests
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+import { getCorsHeaders, handleCorsPreflight } from '../_shared/cors.ts'
+import { checkRateLimit } from '../_shared/rate-limit.ts'
+import { validatePayloadSize, sanitizeInput } from '../_shared/validate.ts'
 
 const getLengthInstruction = (length: string) => {
   switch (length) {
@@ -101,32 +98,69 @@ Guidelines:
 
 Deno.serve(async (req: Request) => {
   // 1. Handle CORS preflight requests
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
-  }
+  const preflight = handleCorsPreflight(req);
+  if (preflight) return preflight;
+
+  const corsHeaders = getCorsHeaders(req);
 
   try {
-    // 2. Parse request body
-    const { content, source_type, title, existing_subjects = [], summary_options = {} } = await req.json() as any
+    // 2. Rate Limiting check (Max 10 requests per 5 minutes per IP)
+    const rateLimit = checkRateLimit(req, { maxRequests: 10, windowSeconds: 300 });
+    if (!rateLimit.allowed) {
+      return new Response(
+        JSON.stringify({ error: `Rate limit exceeded. Please retry in ${rateLimit.retryAfter} seconds.` }),
+        {
+          status: 429,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json',
+            'Retry-After': String(rateLimit.retryAfter),
+          },
+        }
+      );
+    }
 
-    if (!content) {
-      return new Response(JSON.stringify({ error: 'Content is required' }), {
+    // 3. Parse and validate request body
+    const bodyText = await req.text();
+    if (!validatePayloadSize(bodyText)) {
+      return new Response(
+        JSON.stringify({ error: 'Payload size exceeds 500KB limit.' }),
+        { status: 413, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    let parsedBody: any;
+    try {
+      parsedBody = JSON.parse(bodyText);
+    } catch {
+      return new Response(
+        JSON.stringify({ error: 'Invalid JSON payload format.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const { content, source_type, title, existing_subjects = [], summary_options = {} } = parsedBody;
+
+    if (!content || typeof content !== 'string' || content.trim().length === 0) {
+      return new Response(JSON.stringify({ error: 'Content is required and must be non-empty.' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 400,
-      })
+      });
     }
 
-    // 3. Get Groq API key
-    const apiKey = Deno.env.get('GROQ_API_KEY')
+    const sanitizedContent = sanitizeInput(content);
+    const sanitizedTitle = title ? sanitizeInput(title) : '';
+
+    // 4. Get Groq API key
+    const apiKey = Deno.env.get('GROQ_API_KEY');
     if (!apiKey) {
-      throw new Error('GROQ_API_KEY environment variable is not set')
+      throw new Error('GROQ_API_KEY environment variable is not set');
     }
 
-    const promptMessage = `Source Type: ${source_type}\nOptional Title: ${title || 'None'}\n\nContent:\n${content}`;
-
+    const promptMessage = `Source Type: ${source_type || 'text'}\nOptional Title: ${sanitizedTitle || 'None'}\n\nContent:\n${sanitizedContent}`;
     const model = Deno.env.get('GROQ_MODEL') || 'llama-3.3-70b-versatile';
 
-    // 4. Call Groq API
+    // 5. Call Groq API
     const requestBody: Record<string, any> = {
       model,
       messages: [
@@ -148,7 +182,7 @@ Deno.serve(async (req: Request) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(requestBody),
-    })
+    });
 
     if (!response.ok) {
       const errorData = await response.text();
@@ -156,37 +190,35 @@ Deno.serve(async (req: Request) => {
       throw new Error(`Groq API returned status ${response.status}`);
     }
 
-    const data: any = await response.json()
+    const data: any = await response.json();
     const rawResponse = data.choices[0]?.message?.content || '{}';
 
-    // 5. Parse and clean JSON response
+    // 6. Parse and clean JSON response
     let parsedData;
     try {
-      // Strip markdown code fences if the LLM accidentally included them
       const cleanJson = rawResponse.replace(/^```json\n?/, '').replace(/\n?```$/, '').trim();
       parsedData = JSON.parse(cleanJson);
     } catch (parseError) {
-      console.error('JSON Parse Error:', parseError, '\\nRaw Response:', rawResponse);
-      // Fallback error if the LLM hallucinated invalid JSON
+      console.error('JSON Parse Error:', parseError, '\nRaw Response:', rawResponse);
       return new Response(JSON.stringify({ 
         error: 'Failed to generate structured summary, please try again. The AI response was invalid.' 
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 422, // Unprocessable Entity
-      })
+        status: 422,
+      });
     }
 
-    // 6. Return successful structured data
     return new Response(JSON.stringify(parsedData), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
-    })
+    });
 
   } catch (error: any) {
     console.error('Edge Function Error:', error);
     return new Response(JSON.stringify({ error: error.message || 'Internal Server Error' }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,
-    })
+    });
   }
+});
 })

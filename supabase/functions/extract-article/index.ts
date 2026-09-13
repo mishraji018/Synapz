@@ -1,8 +1,35 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
+import { getCorsHeaders, handleCorsPreflight } from '../_shared/cors.ts'
+import { checkRateLimit } from '../_shared/rate-limit.ts'
+import { sanitizeInput } from '../_shared/validate.ts'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+function isSafeUrl(urlString: string): boolean {
+  try {
+    const parsed = new URL(urlString);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return false;
+    }
+    const hostname = parsed.hostname.toLowerCase();
+    
+    // Block loopback, private ranges, and cloud metadata endpoints (SSRF prevention)
+    if (
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname === '0.0.0.0' ||
+      hostname === '::1' ||
+      hostname === '169.254.169.254' || // AWS / GCP / Azure metadata
+      hostname.endsWith('.internal') ||
+      hostname.endsWith('.local') ||
+      /^10\./.test(hostname) ||
+      /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname) ||
+      /^192\.168\./.test(hostname)
+    ) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function extractMainContent(html: string): { title: string; content: string } {
@@ -62,44 +89,72 @@ function extractMainContent(html: string): { title: string; content: string } {
   // Remove empty lines and excessive whitespace
   text = text.split('\n').map((line: string) => line.trim()).filter((line: string) => line.length > 0).join('\n');
 
-  return { title, content: text };
+  return { title: sanitizeInput(title), content: sanitizeInput(text) };
 }
 
 Deno.serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
-  }
+  const preflight = handleCorsPreflight(req);
+  if (preflight) return preflight;
+
+  const corsHeaders = getCorsHeaders(req);
 
   try {
-    const { url } = await req.json() as any;
+    // 1. Rate limiting check (Max 15 requests per 5 minutes per IP)
+    const rateLimit = checkRateLimit(req, { maxRequests: 15, windowSeconds: 300 });
+    if (!rateLimit.allowed) {
+      return new Response(
+        JSON.stringify({ error: `Rate limit exceeded. Please retry in ${rateLimit.retryAfter} seconds.` }),
+        {
+          status: 429,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json',
+            'Retry-After': String(rateLimit.retryAfter),
+          },
+        }
+      );
+    }
 
-    if (!url) {
+    let parsedBody: any;
+    try {
+      parsedBody = await req.json();
+    } catch {
+      return new Response(
+        JSON.stringify({ error: 'Invalid JSON payload' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const { url } = parsedBody;
+
+    if (!url || typeof url !== 'string') {
       return new Response(JSON.stringify({ error: 'URL is required' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 400,
       });
     }
 
-    // Validate URL
-    try {
-      new URL(url);
-    } catch {
-      return new Response(JSON.stringify({ error: 'Invalid URL provided' }), {
+    // SSRF & Protocol validation
+    if (!isSafeUrl(url)) {
+      return new Response(JSON.stringify({ error: 'Invalid or forbidden URL target.' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 400,
       });
     }
 
-    console.log("Fetching article from:", url);
+    // Fetch the webpage with timeout
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000); // 12 second fetch timeout
 
-    // Fetch the webpage
     const response = await fetch(url, {
+      signal: controller.signal,
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.5',
       },
     });
+    clearTimeout(timeout);
 
     if (!response.ok) {
       throw new Error(`Failed to fetch URL. Status: ${response.status}`);
@@ -114,8 +169,6 @@ Deno.serve(async (req: Request) => {
 
     // Truncate very long content (max ~30k chars)
     const truncatedContent = content.length > 30000 ? content.substring(0, 30000) + '\n\n[Content truncated...]' : content;
-
-    console.log("Extracted article length:", truncatedContent.length);
 
     return new Response(JSON.stringify({ 
       title: title || 'Untitled Article', 
@@ -133,4 +186,5 @@ Deno.serve(async (req: Request) => {
       status: 400,
     });
   }
-})
+});
+

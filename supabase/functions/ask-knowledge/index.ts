@@ -1,9 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+import { getCorsHeaders, handleCorsPreflight } from '../_shared/cors.ts'
+import { checkRateLimit } from '../_shared/rate-limit.ts'
+import { validatePayloadSize, sanitizeInput } from '../_shared/validate.ts'
 
 interface Citation {
   document_id: string;
@@ -16,78 +14,116 @@ interface Citation {
 }
 
 Deno.serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
-  }
+  const preflight = handleCorsPreflight(req);
+  if (preflight) return preflight;
+
+  const corsHeaders = getCorsHeaders(req);
 
   try {
-    const { question, notes_context = [], history = [] } = await req.json() as any
+    // 1. Rate Limiting check (Max 20 requests per 5 minutes per IP)
+    const rateLimit = checkRateLimit(req, { maxRequests: 20, windowSeconds: 300 });
+    if (!rateLimit.allowed) {
+      return new Response(
+        JSON.stringify({ error: `Rate limit exceeded. Please retry in ${rateLimit.retryAfter} seconds.` }),
+        {
+          status: 429,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json',
+            'Retry-After': String(rateLimit.retryAfter),
+          },
+        }
+      );
+    }
 
-    if (!question) {
+    // 2. Validate payload size
+    const bodyText = await req.text();
+    if (!validatePayloadSize(bodyText)) {
+      return new Response(
+        JSON.stringify({ error: 'Payload size exceeds 500KB limit.' }),
+        { status: 413, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    let parsedBody: any;
+    try {
+      parsedBody = JSON.parse(bodyText);
+    } catch {
+      return new Response(
+        JSON.stringify({ error: 'Invalid JSON payload format.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const { question, notes_context = [], history = [] } = parsedBody;
+
+    if (!question || typeof question !== 'string' || question.trim().length === 0) {
       return new Response(JSON.stringify({ error: 'Question is required' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 400,
-      })
+      });
     }
 
-    const apiKey = Deno.env.get('GROQ_API_KEY')
+    const sanitizedQuestion = sanitizeInput(question);
+
+    const apiKey = Deno.env.get('GROQ_API_KEY');
     if (!apiKey) {
-      throw new Error('GROQ_API_KEY environment variable is not set')
+      throw new Error('GROQ_API_KEY environment variable is not set');
     }
 
     // Rank / find most relevant notes & sections based on the query keywords & semantic overlap
-    const queryTerms = question.toLowerCase().split(/\s+/).filter((w: string) => w.length > 2)
+    const queryTerms = sanitizedQuestion.toLowerCase().split(/\s+/).filter((w: string) => w.length > 2);
 
-    const scoredNotes = notes_context.map((note: any) => {
-      let score = 0
-      const titleLower = (note.title || '').toLowerCase()
-      const subjectLower = (note.subject || '').toLowerCase()
-      const tldrLower = (note.tldr || '').toLowerCase()
-      const tagsLower = (note.tags || []).join(' ').toLowerCase()
-      const bulletsLower = (note.bullet_summary || []).join(' ').toLowerCase()
-      const keyPointsLower = (note.key_points || []).join(' ').toLowerCase()
+    const scoredNotes = (Array.isArray(notes_context) ? notes_context : []).map((note: any) => {
+      let score = 0;
+      const titleLower = (note.title || '').toLowerCase();
+      const subjectLower = (note.subject || '').toLowerCase();
+      const tldrLower = (note.tldr || '').toLowerCase();
+      const tagsLower = (note.tags || []).join(' ').toLowerCase();
+      const bulletsLower = (note.bullet_summary || []).join(' ').toLowerCase();
+      const keyPointsLower = (note.key_points || []).join(' ').toLowerCase();
 
       queryTerms.forEach((term: string) => {
-        if (titleLower.includes(term)) score += 10
-        if (subjectLower.includes(term)) score += 6
-        if (tagsLower.includes(term)) score += 5
-        if (tldrLower.includes(term)) score += 4
-        if (bulletsLower.includes(term)) score += 3
-        if (keyPointsLower.includes(term)) score += 3
-      })
+        if (titleLower.includes(term)) score += 10;
+        if (subjectLower.includes(term)) score += 6;
+        if (tagsLower.includes(term)) score += 5;
+        if (tldrLower.includes(term)) score += 4;
+        if (bulletsLower.includes(term)) score += 3;
+        if (keyPointsLower.includes(term)) score += 3;
+      });
 
-      return { note, score }
-    })
+      return { note, score };
+    });
 
     // Sort by score and pick top relevant notes (or default to top recent if broad question)
-    scoredNotes.sort((a: any, b: any) => b.score - a.score)
-    const topNotes = scoredNotes.slice(0, 5).map((sn: any) => sn.note)
+    scoredNotes.sort((a: any, b: any) => b.score - a.score);
+    const topNotes = scoredNotes.slice(0, 5).map((sn: any) => sn.note);
 
     // Build grounding knowledge chunks and citations
-    const citations: Citation[] = []
-    const formattedKnowledgeChunks: string[] = []
+    const citations: Citation[] = [];
+    const formattedKnowledgeChunks: string[] = [];
 
     topNotes.forEach((note: any) => {
-      const docCitations: Citation[] = []
+      const docCitations: Citation[] = [];
 
       // Citation for main summary
       if (note.tldr || (note.bullet_summary && note.bullet_summary.length > 0)) {
-        const snippet = note.tldr || note.bullet_summary.slice(0, 2).join(' ')
+        const snippet = note.tldr || note.bullet_summary.slice(0, 2).join(' ');
         docCitations.push({
           document_id: note.id,
           document_title: note.title,
           source_type: note.source_type || 'text',
           section_title: 'Summary & TL;DR',
           viz_type: 'summary',
-          snippet: snippet.substring(0, 180) + '...'
-        })
+          snippet: snippet.substring(0, 180) + '...',
+        });
       }
 
       // Citation for mindmap / treemap if relevant
       if (note.mindmap?.nodes?.length > 0) {
         const matchingNode = note.mindmap.nodes.find((n: any) => 
           queryTerms.some((t: string) => (n.label || '').toLowerCase().includes(t))
-        )
+        );
         if (matchingNode) {
           docCitations.push({
             document_id: note.id,
@@ -96,12 +132,12 @@ Deno.serve(async (req: Request) => {
             section_title: `Mindmap: ${matchingNode.label}`,
             viz_type: 'mindmap',
             viz_node_id: matchingNode.id,
-            snippet: matchingNode.details?.join(' ') || matchingNode.label
-          })
+            snippet: matchingNode.details?.join(' ') || matchingNode.label,
+          });
         }
       }
 
-      citations.push(...docCitations.slice(0, 2))
+      citations.push(...docCitations.slice(0, 2));
 
       formattedKnowledgeChunks.push(`---
 DOCUMENT: "${note.title}" (Subject: ${note.subject || 'General'}, Type: ${note.source_type})
@@ -112,8 +148,8 @@ DETAILED BULLETS:
 ${(note.bullet_summary || []).slice(0, 8).map((b: string) => `• ${b}`).join('\n')}
 MINDMAP SUBTOPICS:
 ${(note.mindmap?.nodes || []).slice(0, 6).map((n: any) => `- ${n.label}: ${(n.details || []).join('; ')}`).join('\n')}
----`)
-    })
+---`);
+    });
 
     const systemPrompt = `You are "Ask My Knowledge", an intelligent personal AI assistant that answers questions accurately based ON THE USER'S SAVED KNOWLEDGE BASE below.
 
@@ -126,13 +162,20 @@ GUIDELINES:
 
 USER'S KNOWLEDGE CONTEXT:
 ${formattedKnowledgeChunks.join('\n\n')}
-`
+`;
+
+    const sanitizedHistory = (Array.isArray(history) ? history : [])
+      .slice(-4)
+      .map((h: any) => ({
+        role: h.role === 'assistant' ? 'assistant' : 'user',
+        content: sanitizeInput(String(h.content || '')),
+      }));
 
     const messages = [
       { role: 'system', content: systemPrompt },
-      ...history.slice(-4).map((h: any) => ({ role: h.role, content: h.content })),
-      { role: 'user', content: question }
-    ]
+      ...sanitizedHistory,
+      { role: 'user', content: sanitizedQuestion },
+    ];
 
     const model = Deno.env.get('GROQ_MODEL') || 'llama-3.3-70b-versatile';
 
@@ -154,16 +197,16 @@ ${formattedKnowledgeChunks.join('\n\n')}
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(requestBody),
-    })
+    });
 
     if (!response.ok) {
-      const errorData = await response.text()
-      console.error('Groq API Error:', errorData)
-      throw new Error(`Groq API returned status ${response.status}`)
+      const errorData = await response.text();
+      console.error('Groq API Error:', errorData);
+      throw new Error(`Groq API returned status ${response.status}`);
     }
 
-    const data: any = await response.json()
-    const content = data.choices[0]?.message?.content || ''
+    const data: any = await response.json();
+    const content = data.choices[0]?.message?.content || '';
 
     return new Response(JSON.stringify({
       answer: content,
@@ -171,13 +214,14 @@ ${formattedKnowledgeChunks.join('\n\n')}
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
-    })
+    });
 
   } catch (error: any) {
-    console.error('Ask Knowledge Error:', error)
+    console.error('Ask Knowledge Error:', error);
     return new Response(JSON.stringify({ error: error.message || 'Internal Server Error' }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,
-    })
+    });
   }
-})
+});
+

@@ -1,34 +1,74 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+import { getCorsHeaders, handleCorsPreflight } from '../_shared/cors.ts'
+import { checkRateLimit } from '../_shared/rate-limit.ts'
+import { validatePayloadSize, sanitizeInput } from '../_shared/validate.ts'
 
 Deno.serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
-  }
+  const preflight = handleCorsPreflight(req);
+  if (preflight) return preflight;
+
+  const corsHeaders = getCorsHeaders(req);
 
   try {
-    const { note_title, note_content, count = 5, difficulty = 'medium' } = await req.json() as any
+    // 1. Rate Limiting check (Max 10 requests per 5 minutes per IP)
+    const rateLimit = checkRateLimit(req, { maxRequests: 10, windowSeconds: 300 });
+    if (!rateLimit.allowed) {
+      return new Response(
+        JSON.stringify({ error: `Rate limit exceeded. Please retry in ${rateLimit.retryAfter} seconds.` }),
+        {
+          status: 429,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json',
+            'Retry-After': String(rateLimit.retryAfter),
+          },
+        }
+      );
+    }
+
+    // 2. Validate payload size
+    const bodyText = await req.text();
+    if (!validatePayloadSize(bodyText)) {
+      return new Response(
+        JSON.stringify({ error: 'Payload size exceeds 500KB limit.' }),
+        { status: 413, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    let parsedBody: any;
+    try {
+      parsedBody = JSON.parse(bodyText);
+    } catch {
+      return new Response(
+        JSON.stringify({ error: 'Invalid JSON payload format.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const { note_title, note_content, count = 5, difficulty = 'medium' } = parsedBody;
 
     if (!note_content) {
       return new Response(JSON.stringify({ error: 'Note content is required' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 400,
-      })
+      });
     }
 
-    const apiKey = Deno.env.get('GROQ_API_KEY')
+    const sanitizedTitle = note_title ? sanitizeInput(String(note_title)) : 'Untitled Study Note';
+    const safeCount = Math.min(Math.max(1, Number(count) || 5), 10);
+    const safeDifficulty = ['easy', 'medium', 'hard'].includes(String(difficulty).toLowerCase())
+      ? String(difficulty).toLowerCase()
+      : 'medium';
+
+    const apiKey = Deno.env.get('GROQ_API_KEY');
     if (!apiKey) {
-      throw new Error('GROQ_API_KEY environment variable is not set')
+      throw new Error('GROQ_API_KEY environment variable is not set');
     }
 
     const systemPrompt = `You are an expert tutor creating a high-quality, multiple-choice quiz based on the provided study material.
 You output STRICTLY valid JSON with no markdown fences (\`\`\`json) and no conversational text.
 
-Generate exactly ${count} multiple choice questions of ${difficulty} difficulty.
+Generate exactly ${safeCount} multiple choice questions of ${safeDifficulty} difficulty.
 Each question must test real understanding, key facts, concepts, or applications from the document.
 Provide 4 plausible options for each question (only 1 strictly correct), the 0-indexed correct_index, and a clear explanation of why that answer is correct.
 
@@ -44,9 +84,9 @@ JSON SCHEMA:
       "explanation": "Clear explanation of why option A is correct and references key details from the content."
     }
   ]
-}`
+}`;
 
-    const userPrompt = `Document Title: ${note_title || 'Untitled Study Note'}\n\nDocument Summary & Content:\n${typeof note_content === 'string' ? note_content : JSON.stringify(note_content, null, 2)}`
+    const userPrompt = `Document Title: ${sanitizedTitle}\n\nDocument Summary & Content:\n${typeof note_content === 'string' ? sanitizeInput(note_content) : JSON.stringify(note_content, null, 2)}`;
 
     const model = Deno.env.get('GROQ_MODEL') || 'llama-3.3-70b-versatile';
 
@@ -71,37 +111,38 @@ JSON SCHEMA:
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(requestBody),
-    })
+    });
 
     if (!response.ok) {
-      const errorData = await response.text()
-      console.error('Groq API Error:', errorData)
-      throw new Error(`Groq API returned status ${response.status}`)
+      const errorData = await response.text();
+      console.error('Groq API Error:', errorData);
+      throw new Error(`Groq API returned status ${response.status}`);
     }
 
-    const data: any = await response.json()
-    const rawResponse = data.choices[0]?.message?.content || '{}'
-    const cleanJson = rawResponse.replace(/^```json\n?/, '').replace(/\n?```$/, '').trim()
-    const parsed = JSON.parse(cleanJson)
+    const data: any = await response.json();
+    const rawResponse = data.choices[0]?.message?.content || '{}';
+    const cleanJson = rawResponse.replace(/^```json\n?/, '').replace(/\n?```$/, '').trim();
+    const parsed = JSON.parse(cleanJson);
 
     // Ensure proper question IDs
     if (parsed.questions && Array.isArray(parsed.questions)) {
       parsed.questions = parsed.questions.map((q: any, i: number) => ({
         ...q,
         id: q.id || `q_${Date.now()}_${i + 1}`
-      }))
+      }));
     }
 
     return new Response(JSON.stringify(parsed), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
-    })
+    });
 
   } catch (error: any) {
-    console.error('Generate Quiz Error:', error)
+    console.error('Generate Quiz Error:', error);
     return new Response(JSON.stringify({ error: error.message || 'Internal Server Error' }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,
-    })
+    });
   }
-})
+});
+

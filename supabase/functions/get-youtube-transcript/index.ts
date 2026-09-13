@@ -1,25 +1,57 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
-
-// CORS headers for browser requests
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+import { getCorsHeaders, handleCorsPreflight } from '../_shared/cors.ts'
+import { checkRateLimit } from '../_shared/rate-limit.ts'
+import { sanitizeInput } from '../_shared/validate.ts'
 
 Deno.serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
-  }
+  const preflight = handleCorsPreflight(req);
+  if (preflight) return preflight;
+
+  const corsHeaders = getCorsHeaders(req);
 
   try {
-    const { video_id } = await req.json() as any
-    console.log("Received video_id:", video_id)
+    // 1. Rate limiting check (Max 15 requests per 5 minutes per IP)
+    const rateLimit = checkRateLimit(req, { maxRequests: 15, windowSeconds: 300 });
+    if (!rateLimit.allowed) {
+      return new Response(
+        JSON.stringify({ error: `Rate limit exceeded. Please retry in ${rateLimit.retryAfter} seconds.` }),
+        {
+          status: 429,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json',
+            'Retry-After': String(rateLimit.retryAfter),
+          },
+        }
+      );
+    }
 
-    if (!video_id) {
+    let parsedBody: any;
+    try {
+      parsedBody = await req.json();
+    } catch {
+      return new Response(
+        JSON.stringify({ error: 'Invalid JSON payload format.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const { video_id } = parsedBody;
+
+    if (!video_id || typeof video_id !== 'string') {
       return new Response(JSON.stringify({ error: 'Video ID is required' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 400,
-      })
+      });
+    }
+
+    // Validate YouTube video ID format (11 characters: [a-zA-Z0-9_-])
+    const cleanVideoId = sanitizeInput(video_id);
+    if (!/^[a-zA-Z0-9_-]{6,20}$/.test(cleanVideoId)) {
+      return new Response(JSON.stringify({ error: 'Invalid YouTube Video ID format.' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400,
+      });
     }
 
     const rapidApiKey = Deno.env.get('RAPIDAPI_KEY') || Deno.env.get('RAPID_API_KEY');
@@ -27,23 +59,22 @@ Deno.serve(async (req: Request) => {
       throw new Error("RAPIDAPI_KEY (or RAPID_API_KEY) environment variable is missing.");
     }
 
-    const videoUrl = `https://www.youtube.com/watch?v=${video_id}`;
+    const videoUrl = `https://www.youtube.com/watch?v=${cleanVideoId}`;
     
     // Fetch title from oEmbed API
-    let title = 'YouTube Video'
+    let title = 'YouTube Video';
     try {
-      const oembedResponse = await fetch(`https://www.youtube.com/oembed?url=${videoUrl}&format=json`)
+      const oembedResponse = await fetch(`https://www.youtube.com/oembed?url=${videoUrl}&format=json`);
       if (oembedResponse.ok) {
-        const oembedData: any = await oembedResponse.json()
-        title = oembedData.title || title
+        const oembedData: any = await oembedResponse.json();
+        title = oembedData.title || title;
       }
     } catch (e) {
-      console.error("Failed to fetch title:", e)
+      console.error("Failed to fetch title:", e);
     }
 
     // Call RapidAPI for transcript (omitting lang to auto-fetch available language)
-    const rapidApiUrl = `https://youtube-transcriptor.p.rapidapi.com/transcript?video_id=${video_id}`;
-    console.log("Fetching transcript from RapidAPI...");
+    const rapidApiUrl = `https://youtube-transcriptor.p.rapidapi.com/transcript?video_id=${cleanVideoId}`;
     
     const rapidApiResponse = await fetch(rapidApiUrl, {
       method: 'GET',
@@ -60,14 +91,10 @@ Deno.serve(async (req: Request) => {
     }
 
     const rapidApiData: any = await rapidApiResponse.json();
-    
-    // Log the exact JSON structure for debugging
-    console.log("RapidAPI Raw Response Type:", typeof rapidApiData);
-    console.log("RapidAPI Raw Response:", JSON.stringify(rapidApiData).substring(0, 1000));
 
     // Handle expected API error shapes
     if (rapidApiData && rapidApiData.error) {
-      const apiError = rapidApiData.error.toLowerCase();
+      const apiError = String(rapidApiData.error).toLowerCase();
       if (apiError.includes("not available") || apiError.includes("no captions") || apiError.includes("disabled")) {
         throw new Error("This video doesn't have captions available. Please try a different video.");
       }
@@ -88,24 +115,21 @@ Deno.serve(async (req: Request) => {
     }
 
     if (!transcriptText) {
-       console.error("Unrecognized or empty transcript format:", rapidApiData);
        throw new Error("Unexpected response format from transcript API. Please check the logs.");
     }
 
-    console.log("Transcript extracted length:", transcriptText.length);
-    console.log("Transcript starts with:", transcriptText.substring(0, 100));
-
     // Return successful structured data
-    return new Response(JSON.stringify({ transcript: transcriptText, title }), {
+    return new Response(JSON.stringify({ transcript: transcriptText, title: sanitizeInput(title) }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
-    })
+    });
 
   } catch (error: any) {
     console.error('YouTube transcript error:', error);
     return new Response(JSON.stringify({ error: error.message || String(error) }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 400,
-    })
+    });
   }
-})
+});
+
