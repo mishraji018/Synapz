@@ -148,7 +148,7 @@ function SubjectItem({ subject }: { subject: string }) {
 
 export function Sidebar() {
   const { sidebarOpen } = useUIStore()
-  const { user } = useAuthStore()
+  const { user, setUser, setSession } = useAuthStore()
 
   const { data: notes } = useQuery({
     queryKey: ['notes'],
@@ -168,6 +168,8 @@ export function Sidebar() {
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
+    setUser(null)
+    setSession(null)
   }
 
   return (
