@@ -3,9 +3,11 @@
     "target": "esnext",
     "module": "esnext",
     "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
     "lib": ["esnext"],
     "noEmit": true,
     "skipLibCheck": true
   },
   "include": ["**/*.ts"]
 }
+
