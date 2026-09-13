@@ -14,6 +14,7 @@ export function Login() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
+  const [failedAttempts, setFailedAttempts] = useState(0)
   const [lockoutSeconds, setLockoutSeconds] = useState<number | null>(null)
   const navigate = useNavigate()
 
@@ -32,7 +33,7 @@ export function Login() {
     return () => clearInterval(timer)
   }, [lockoutSeconds])
 
-  // Password Login Handler (Protected by Visual CAPTCHA + Rate Limiting)
+  // Password Login Handler (Protected by Visual CAPTCHA + 3-Attempt Rate Limiting)
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     if (lockoutSeconds && lockoutSeconds > 0) return
@@ -65,7 +66,7 @@ export function Login() {
           return
         }
       } catch {
-        // Fallback if RPC is not deployed yet
+        // Fallback to client state
       }
 
       // 2. Perform Supabase authentication
@@ -75,11 +76,15 @@ export function Login() {
       })
 
       if (authError) {
+        const nextAttempts = failedAttempts + 1
+        setFailedAttempts(nextAttempts)
+
         logSecurityEvent({
           type: 'AUTH_LOGIN_FAILED',
-          details: { email: sanitizedEmail, error: authError.message }
+          details: { email: sanitizedEmail, error: authError.message, attempt: nextAttempts }
         })
 
+        let isLockedByDb = false
         try {
           await supabase.rpc('record_login_attempt', {
             p_email: sanitizedEmail,
@@ -89,19 +94,34 @@ export function Login() {
             p_email: sanitizedEmail
           })
           if (checkAfter?.locked) {
+            isLockedByDb = true
             setLockoutSeconds(checkAfter.retry_after_seconds || 900)
             setError(checkAfter.message || 'Account temporarily locked due to repeated failed attempts.')
           } else if (checkAfter?.failed_attempts) {
-            const left = Math.max(0, 5 - checkAfter.failed_attempts)
-            setError(`Invalid credentials. ${left} attempt${left === 1 ? '' : 's'} remaining before 15-min lockout.`)
-          } else {
-            setError(authError.message)
+            const left = Math.max(0, 3 - checkAfter.failed_attempts)
+            if (left === 0) {
+              setLockoutSeconds(900)
+              setError('Account locked for 15 minutes due to 3 failed login attempts.')
+            } else {
+              setError(`Invalid credentials. ${left} attempt${left === 1 ? '' : 's'} remaining before 15-min lockout.`)
+            }
           }
         } catch {
-          setError(authError.message)
+          // RPC fallback
+        }
+
+        if (!isLockedByDb) {
+          if (nextAttempts >= 3) {
+            setLockoutSeconds(900)
+            setError('Account locked for 15 minutes due to 3 failed login attempts.')
+          } else {
+            const left = 3 - nextAttempts
+            setError(`Invalid credentials. ${left} attempt${left === 1 ? '' : 's'} remaining before 15-min lockout.`)
+          }
         }
         setLoading(false)
       } else {
+        setFailedAttempts(0)
         logSecurityEvent({
           type: 'AUTH_LOGIN_SUCCESS',
           details: { email: sanitizedEmail }
